@@ -15,7 +15,7 @@ defmodule HeisProsjekt do
   def hello do
     IO.puts("I am recompiled")
     IO.puts("Hello world")
-    ConnectionEstablisher.start_link()
+    ConnectionEstablisher.start_link(:filler_arg)
     # NodeListener.start_link()
     # NodeAdvertiser.start_link()
   end

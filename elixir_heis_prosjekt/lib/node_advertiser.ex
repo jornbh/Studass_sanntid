@@ -1,15 +1,17 @@
 defmodule ConnectionEstablisher do
-
-  def start_link() do
+  use Supervisor
+  @spec start_link(any) :: :ignore | {:error, any} | {:ok, pid}
+  def start_link(init_arg) do
+    Supervisor.start_link(__MODULE__, init_arg, name: __MODULE__)
+  end
+  def init(_init_arg) do
     register_node_name()
-    listen_pid = NodeListener.start_link()
-    broadcaster_pid = NodeAdvertiser.start_link()
-    IO.inspect listen_pid
-    IO.inspect broadcaster_pid
+    children = [NodeListener, NodeAdvertiser]
+    Supervisor.init(children, strategy: :one_for_one)
   end
 
-  # Info needed to register a nodename
-  def get_IP_str do
+  # Private functions
+  defp get_IP_str do
     {:ok, ifs} = :inet.getif()
     ips = Enum.map(ifs, fn {ip, _broadaddr, _mask} -> ip end)
     valid_ips = ips -- [{127,0,0,1}] # Add more illegal ips if there are any
@@ -17,7 +19,7 @@ defmodule ConnectionEstablisher do
     to_string(:inet_parse.ntoa(ip_tuple))
   end
 
-  def register_node_name(node_number \\ 0) do
+  defp register_node_name(node_number \\ 0) when node_number <= 200  do
     ip_str = get_IP_str()
     index_str = Integer.to_string(node_number)
     full_name_str = "foobar" <> index_str <>"@"<> ip_str
@@ -32,10 +34,20 @@ defmodule ConnectionEstablisher do
 end
 
 defmodule NodeListener do
+  def child_spec(_arg) do
+    %{
+    id: NodeListener,
+    start: {NodeListener, :start_link, []}
+  }
+  end
+  @spec start_link :: {:ok, pid}
   def start_link() do
-    spawn_link(__MODULE__, :main, [])
+    pid = spawn_link(__MODULE__, :main, [])
+    {:ok, pid}
   end
   def rcv_port do 5675 end
+
+  @spec main :: no_return
   def main do
     {:ok, recv_socket} = :gen_udp.open(rcv_port(), [:list, {:reuseaddr,true}, {:active,false}])
     IO.write "Spawned Node-listener listens on #{rcv_port()} with a socket "
@@ -43,6 +55,7 @@ defmodule NodeListener do
     recv_loop(recv_socket)
   end
 
+  @spec recv_loop(port) :: no_return
   def recv_loop(  recv_socket) do
     {:ok, {_IP, _port, node_ID}} = :gen_udp.recv(recv_socket,0) #This blocks without another broadcaster
     # IO.write "Return Val"
@@ -65,12 +78,20 @@ defmodule NodeListener do
 end
 
 defmodule NodeAdvertiser do
+
+  def child_spec(_arg) do
+    %{
+    id: NodeAdvertiser,
+    start: {NodeAdvertiser, :start_link, []}
+  }
+  end
     def send_port do  5676 end
     def send_IP do  {255,255,255,255} end
     def broadcast_period do 2000 end
     def start_link() do
       # IO.puts "Hello from Node-advertiser start on #{@send_port}"
-      spawn_link(__MODULE__, :main, [])
+      pid = spawn_link(__MODULE__, :main, [])
+      {:ok, pid}
     end
     def main do
       options = [:list, {:reuseaddr,true}, {:active,true}, {:broadcast, true}]
