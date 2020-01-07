@@ -22,10 +22,11 @@ defmodule ConnectionEstablisher do
   defp register_node_name(node_number \\ 0) when node_number <= 200  do
     ip_str = get_IP_str()
     index_str = Integer.to_string(node_number)
-    full_name_str = "foobar" <> index_str <>"@"<> ip_str
+    full_name_str = "myNode" <> index_str <>"@"<> ip_str
     full_name_atom = String.to_atom(full_name_str)
     case Node.start(full_name_atom) do
       {:ok, result} ->
+        Node.set_cookie(:elevator_cookie)
         IO.write "Node started with result: "
         IO.inspect result;
       {:error, _result}-> register_node_name( node_number + 1)
