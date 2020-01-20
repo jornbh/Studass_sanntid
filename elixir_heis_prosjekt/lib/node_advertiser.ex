@@ -1,4 +1,5 @@
 defmodule ConnectionEstablisher do
+  #! Remember to call epmd -daemon if the program crashes inexplicably
   use Supervisor
   @spec start_link(any) :: :ignore | {:error, any} | {:ok, pid}
   def start_link(init_arg) do
@@ -11,7 +12,7 @@ defmodule ConnectionEstablisher do
   end
 
   # Private functions
-  defp get_IP_str do
+  def get_IP_str do
     {:ok, ifs} = :inet.getif()
     ips = Enum.map(ifs, fn {ip, _broadaddr, _mask} -> ip end)
     valid_ips = ips -- [{127,0,0,1}] # Add more illegal ips if there are any
@@ -19,7 +20,8 @@ defmodule ConnectionEstablisher do
     to_string(:inet_parse.ntoa(ip_tuple))
   end
 
-  defp register_node_name(node_number \\ 0) when node_number <= 200  do
+  def register_node_name(node_number \\ 0)
+  def register_node_name(node_number) when node_number <= 200  do
     ip_str = get_IP_str()
     index_str = Integer.to_string(node_number)
     full_name_str = "myNode" <> index_str <>"@"<> ip_str
@@ -29,8 +31,14 @@ defmodule ConnectionEstablisher do
         Node.set_cookie(:elevator_cookie)
         IO.write "Node started with result: "
         IO.inspect result;
-      {:error, _result}-> register_node_name( node_number + 1)
+      {:error, result}->
+        IO.inspect result
+        register_node_name( node_number + 1)
     end
+  end
+  def register_node_name(_node_number) do
+    IO.puts "Tried to register a name 200 times, so I will just kill myself"
+    exit("Tried to register a name more that 200 times and failed")
   end
 end
 

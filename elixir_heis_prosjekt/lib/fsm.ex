@@ -33,6 +33,7 @@ defmodule FiniteStateMachine do
     FSMWatchdog.start_link()
     state = :running
     sub_state = %{floor: -1, destination: :none, dir: :up}
+    IO.puts "Started FSM"
     {:ok, {state, sub_state}}
   end
 
@@ -179,6 +180,10 @@ defmodule FiniteStateMachine do
     [{Driver.SetLight,:floor_indicator, [floor]}] #TODO add to update queue...
   end
   #TODO add a bump-function
+  def handle_event( :timeout, :waiting, sub_state ) do
+    IO.puts "Bump the master"
+    QueueMaster.claim_an_order node(), sub_state.floor, sub_state.dir
+  end
   def handle_event( _event, _state, _sub_state)do
     [] # Ignore event
   end

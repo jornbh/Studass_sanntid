@@ -1,144 +1,54 @@
-defmodule Driver do
-  use Supervisor
-
-  def start_link(init_args) do
-    Supervisor.start_link(__MODULE__, init_args, name: __MODULE__)
-  end
-
-  defmodule SetMotorDir do
-    def up(),    do: RawDriver.set_motor_dir(:motor_up)
-    def down(),  do: RawDriver.set_motor_dir(:motor_down)
-    def still(), do: RawDriver.set_motor_dir(:motor_still)
-
-
-  end
-
-  defmodule SetLight do
-    def button(floor, dir, wanted_state) do
-      RawDriver.set_button_light(floor, dir, wanted_state)
-    end
-    def floor_indicator(floor) do
-      RawDriver.set_floor_indicator(floor)
-    end
-    def door(state) do
-      RawDriver.set_door_state(state)
-    end
-  end
-  def init(init_args) do
-    children = [
-      # FloorSubscriber,
-      {RawDriver, init_args},
-      {FloorSubscriber, init_args}
-      | ButtonSubscriber.get_subscribers_specs(init_args)
-    ]
-
-    Supervisor.init(children, strategy: :one_for_one)
-  end
-
-end
-
-# Intermal modules needed for the driver
-
-
-defmodule ButtonSubscriber do
-  # TODO Implement this
-
-  def get_subscribers_specs(args) do
-    button_types = get_all_buttons(args.n_floors)
-    get_spec = fn(button_type)-> child_spec({button_type, args}) end
-    Enum.map(button_types,get_spec )
-  end
-  def child_spec({{ floor, dir}, args}) do
-    mod_str = Atom.to_string __MODULE__
-    floor_str = Integer.to_string floor
-    dir_str = Atom.to_string dir
-    name_str = mod_str <> "_" <> floor_str <>"_"<> dir_str
-    name = String.to_atom name_str
-    %{
-      id: name,
-      start: {__MODULE__, :start_link, [{ floor, dir}]}
-    }
-  end
-
-  @spec get_all_buttons(integer) :: [any]
-  def get_all_buttons(n_floors) do
-    dirs = [:hall_up, :hall_down, :cab]
-    all_combinations = for floor <- 1..n_floors, dir <- dirs, do: {floor, dir}
-    all_combinations --[{n_floors, :hall_up}, {1, :hall_down}]
-  end
-
-  def start_link({floor, dir}) do
-    pid = spawn_link(__MODULE__, :main, [{floor, dir}])
-    {:ok, pid} #All children are linked, so only one is needed for the restart(?)
-  end
-
-  def main({floor, dir}) do
-    :timer.sleep(100)
-    is_button_pressed = RawDriver.poll_button?(floor, dir)
-
-    # Holding the button down on the simulator is read as fast tapping
-    if is_button_pressed   do
-      IO.write "Pressed: Button #{floor}"
-      IO.inspect dir
-      IO.inspect is_button_pressed
-      #TODO Handle subscription
-    end
-    main({floor, dir})
-  end
-
-end
-
-defmodule FloorSubscriber do
-  def child_spec(args) do
-    %{
-      id: __MODULE__,
-      start: {__MODULE__, :start_link, [args.floor_subscriber_funs]}
-    }
-  end
-
-  def start_link(subscriber_funs \\ []) do
-    pid = spawn_link(__MODULE__, :main, [subscriber_funs])
-    {:ok, pid}
-  end
-
-  def main(subscriber_funs, prev_state\\:between_floors) do
-    :timer.sleep(100)
-    floor_state = RawDriver.poll_floor()
-
-    unless floor_state == :between_floors do
-      unless prev_state == floor_state do
-
-        for foo<-subscriber_funs, do: foo.(floor_state)
-      end
-    end
-
-    # IO.inspect(floor_state)
-    main(subscriber_funs, floor_state)
-  end
-end
-
-
 
 defmodule RawDriver do
+  @moduledoc"""
+  All credits to Jostein for implementing this
+  ## Description
+  You must start the driver with `start_link()` or `start_link(ip_address, port)` before any of the other functions will work
+
+  ## API:
+  ```
+  {:ok, driver_pid} = Driver.start_link
+  set_motor_direction( driver_pid, motor_direction  )
+  set_order_button_light( driver_pid, button_direction ,floor, on_or_off   )
+  set_floor_indicator( driver_pid, floor )
+  set_stop_button_light( driver_pid, on_or_off )
+  set_door_open_light( driver_pid, on_or_off )
+  get_order_button_state( driver_pid,floor, button_direction   )
+  get_floor_sensor_state( driver_pid )
+  get_stop_button_state( driver_pid )
+  get_obstruction_switch_state( driver_pid )
+  ```
+
+  ## Further reading
+  GenServers are a really neat way to make servers without having to rewrite the same code all the time. It works *Exactly* the same in erlang as well, but it is called gen_server instead. The erlang documentation is kind of hard understand, so use the elixir-video and "Translate" it to erlang (gen_server:call(...) instead of GenServer.call(...)).
+
+  Short version is that a GenServer implements the basic parts of a server, and the code seen in this file is the "Blanks you have to fill in"
+
+  ### A youtube-video that explains GenServers and Supervisors
+  https://www.youtube.com/watch?v=3EjRvaCOl94
+
+  """
   use GenServer
   @type button_dir :: :hall_up | :hall_down | :cab
+  # Define Types used by dialyzer
+  @type button :: :hall_up | :hall_down | :cab
+  @type motor :: :up | :down | :stop
+  @type state :: :on | :off
+  @type ip_address :: {integer(), integer(), integer(), integer()}
 
-  # TODO Implement calls to GenServer
-  def child_spec(args) do
-    ip = args.ip
-    port = args.port
-
+  def child_spec(ip, port) do
     %{
       id: __MODULE__,
-      start: {__MODULE__, :start_link, [{ip, port}]}
+      start: {__MODULE__, :start_link, [ip, port]}
     }
   end
 
-  def start_link({ip, port}) do
-    result = GenServer.start_link(__MODULE__, {ip, port}, name: __MODULE__)
-    IO.write("Gen server was started")
-    IO.inspect(result)
-    result
+  def start_link() do
+    start_link({127,0,0,1}, 15657)
+  end
+
+  def start_link(ip, port) do
+    GenServer.start_link(__MODULE__, {ip, port}, name: __MODULE__)
   end
 
   @impl true
